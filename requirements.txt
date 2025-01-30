@@ -1,5 +1,8 @@
 faiss-cpu
 huggingface-hub
+langchain
+langchain-community
 logging
 numpy
 ollama
+transformers
