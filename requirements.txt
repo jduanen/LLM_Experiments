@@ -1,0 +1,6 @@
+faiss-cpu
+huggingface-hub
+logging
+numpy
+ollama
+string
