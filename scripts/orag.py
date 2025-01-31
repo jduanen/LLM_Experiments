@@ -8,11 +8,13 @@
 
 import logging
 import numpy as np
+import os
 from string import Template
 
 import faiss
-from huggingface_hub import HuggingFaceEmbeddings
-from ollama import Ollama
+from langchain_huggingface import HuggingFaceEmbeddings
+#from langchain_community.embeddings import HuggingFaceEmbeddings
+import ollama
 
 
 LOG_LEVEL = "WARNING"
@@ -21,7 +23,7 @@ LOG_LEVEL = "WARNING"
 LLM_MODEL = "deepseek-r1:1.5b"
 
 # path to docs that define the knowledge base
-DOCS_PATH = "${HOME}/Code/LLM_Experiments/assets/"
+DOCS_PATH = "/home/jdn/Code/LLM_Experiments/assets/"
 
 # instruct model to respond based only on the retrieved context
 PROMPT_TEMPLATE = Template("""
@@ -40,17 +42,6 @@ USER_QUESTIONS = (
     "What is the meaning of life?")
 
 
-def answerQuery(llm, retriever, propmtTemplate, question):
-    # retrieve relevant context from the knowledge base
-    context = retriever.retrieve(question)
-    
-    # combine retrieved contexts into a single string (if multiple)
-    combinedContext = "n".join(context)
-    
-    # generate an answer using the LLM with the combined context
-    response = llm.generate(promptTemplate.substitute(context=combinedContext, question=question))
-    return response.strip()
-
 class SimpleRetriever():
     def __init__(self, index, embeddingsModel):
         self.index = index
@@ -62,10 +53,7 @@ class SimpleRetriever():
         return [documents[i] for i in indices[0]]
 
 class RetrievalAugmentedGenerator():
-    def __init__(self, model, promptTemplate):
-        self.llm = Ollama(model=model)
-        self.promptTemplate = promptTemplate
-
+    @staticmethod
     def _loadDocuments(directory):
         documents = []
         for filename in os.listdir(directory):
@@ -74,12 +62,16 @@ class RetrievalAugmentedGenerator():
                     documents.append(file.read())
         return documents
 
+    def __init__(self, model, promptTemplate):
+        self.promptTemplate = promptTemplate
+
     def setKnowledgeBase(self, docsPath):
-        self.docs = self._loadDocuments(docsPath)
+        self.docs = RetrievalAugmentedGenerator._loadDocuments(docsPath)
 
         # init the embeddings model and generate embeddings for all documents
         self.embeddingsModel = HuggingFaceEmbeddings()
-        docEmbeddings = [embeddingsModel.embed(doc) for doc in self.docs]
+        #docEmbeddings = [self.embeddingsModel.embed(doc) for doc in self.docs]
+        docEmbeddings = self.embeddingsModel.embed_documents(self.docs)
         self.docEmbeddings = np.array(docEmbeddings).astype('float32')
 
         # create FAISS index and add document embeddings to the index
@@ -97,7 +89,7 @@ class RetrievalAugmentedGenerator():
         combinedContext = "n".join(context)
     
         # generate an answer with the model, using the combined context
-        response = self.llm.generate(self.promptTemplate.substitute(context=combinedContext, question=question))
+        response = ollama.generate(promptTemplate.substitute(context=combinedContext, question=question))
         return response.strip()
 
 if __name__ == "__main__":
