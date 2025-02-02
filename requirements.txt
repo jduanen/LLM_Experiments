@@ -1,4 +1,7 @@
-faiss-cpu
+chromadb
+#faiss-cpu
+langchain
+langchain-community
 langchain-huggingface
 logging
 numpy
