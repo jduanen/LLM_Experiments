@@ -48,9 +48,7 @@ Answer:
 """).substitute(gcontext=self.globalContext, context=context, question=question)
     
         # generate an answer with the model, using the combined context
-        #### FIXME split into thoughts and answer
         response = self.client.generate(model=self.model, prompt=fullPrompt)
-#        answer = re.sub(r'<think>.*?</think>', '', response['response'], flags=re.DOTALL)
         pattern = f"({re.escape('<think>')}.*?{re.escape('</think>')})"
         parts = re.split(pattern, response['response'], maxsplit=1, flags=re.DOTALL)
         if len(parts) == 3:
