@@ -17,7 +17,7 @@ import yaml
 import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 
 from rag.RetrievalAugmentedGeneration import RetrievalAugmentedGeneration
-from rag import EmbeddingsStore
+from rag.EmbeddingsStore import EmbeddingsStore
 
 
 DEF_LOG_LEVEL = "WARNING"
@@ -177,24 +177,19 @@ def getOpts():
 
 
 def run(options):
-    embeddingsStore = EmbeddingsStore.EmbeddingsStore()
+    embeddingsStore = EmbeddingsStore(options['numRetrieves'], options['threshold'])
     if options['useEmbeddingsPath']:
         print("Use saved embeddingsStore")
         embeddingStore.useStore(options['useEmbeddingsPath'])
     else:
-        print("Create Embeddings Store:")
+        print(f"Create Embeddings Store: {options['docPath']}, {options['chunkSize']}, {options['chunkOverlap']}, {options['saveEmbeddingsPath']}")
         embeddingsStore.createStore(options['docPath'], options['chunkSize'],
                                     options['chunkOverlap'], options['saveEmbeddingsPath'])
-    print("Create Retriever: TBD")
-    ''' 
-    retriever = ????(options['numToRetrieve'], options['relevanceThreshold'],
-                     options['globalContext'], options[''], options[''])
-    '''
 
-    rag = RAG(embeddingsStore, retriever, options['model'])
+    rag = RetrievalAugmentedGeneration(embeddingsStore, options['model'], options['globalContext'])
     if options['query']:
         print(f"Question: {options['query']}")
-        thoughts, answer = rag.question(options['query'])
+        thoughts, answer = rag.answerQuestion(options['query'])
         if options['printThoughts']:
             print(f"Thoughts: {thoughts}")
         print(f"Answer: {answer}")
@@ -203,7 +198,7 @@ def run(options):
             query = input("Question: ")
             if not query:
                 break
-            thoughts, answer = rag.question(query)
+            thoughts, answer = rag.answerQuestion(query)
             if options['printThoughts']:
                 print(f"Thoughts: {thoughts}")
             print(f"Answer: {answer}")
