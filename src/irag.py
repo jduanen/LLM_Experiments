@@ -16,43 +16,53 @@ import yaml
 
 import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 
+from rag.RetrievalAugmentedGeneration import RetrievalAugmentedGeneration
+from rag import EmbeddingsStore
+
 
 DEF_LOG_LEVEL = "WARNING"
 
+DEF_LLM_NAME = "deepseek-r1:1.5b"
+
+DEF_CHUNK_SIZE = 2000
+DEF_CHUNK_OVERLAP = 0
+
+# instruct model to respond based only on the retrieved context
+DEF_GLOBAL_CONTEXT = """
+You are an experienced programmer, speaking to another experienced programmer.
+Use ONLY the context below.
+If unsure, say "I don't know".
+Keep answers under 4 sentences.
+"""
+
 DEFAULTS = {
-    "chunkOverlap": 0,
-    "chunkSize": 2000,
+    "chunkOverlap": DEF_CHUNK_OVERLAP,
+    "chunkSize": DEF_CHUNK_SIZE,
     "confFile": ".rag.conf",
     "docPath": None,
     "embeddingModel": "all-mpnet-base-v2",
-    "globalContext": "",
+    "globalContext": DEF_GLOBAL_CONTEXT,
     "logLevel": DEF_LOG_LEVEL,
     "logFile": None,
-    "model": "deepseek-r1:8b",
+    "model": DEF_LLM_NAME,
     "numRetrieves": 4,
     "printThoughts": False,
     "query": None,
-    "saveEmbeddingsFile": False,
+    "saveEmbeddingsPath": False,
     "similarity": "Cosine",
     "threshold": None,
-    "useEmbeddingsFile": False,
+    "useEmbeddingsPath": False,
     "vectorStore": "ChromaDB",
     "verbose": False
 }
 
-
-#### TODO instantiate desired vector store subclass
-
-#### TODO subclass rag and create myRag that has this method and takes the given vector store
-#    def question(self, query):
-#        return self.askQuestion(query, options['numRetrieves'], options['printThoughts'])
 
 def getOpts():
     logging.basicConfig(level=DEF_LOG_LEVEL)
 
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
 [-q <query>] [-g <globalContext>] [-p <printThoughts>] [-k <numRetrieves>] [-t <threshold>] \
-[-E <saveEmbeddingsFile>] [-u <useEmbeddingsFile>] \
+[-E <saveEmbeddingsPath>] [-u <useEmbeddingsPath>] \
 [-d <docPath>] [-e <embeddingModel>] [-s <vectorStore>] [-S <similarity>] [-C <chunkSize>] [-o <chunkOverlap>]"
 
     ap = argparse.ArgumentParser()
@@ -93,10 +103,10 @@ def getOpts():
 
     embeddingsGroup = ap.add_argument_group("Embeddings Store Options")
     embeddingsGroup.add_argument(
-        "-E", "--saveEmbeddingsFile", action="store", type=str,
+        "-E", "--saveEmbeddingsPath", action="store", type=str,
         help="Path to where embeddings store is to be saved")
     embeddingsGroup.add_argument(
-        "-u", "--useEmbeddingsFile", action="store", type=str,
+        "-u", "--useEmbeddingsPath", action="store", type=str,
         help="Path to where embeddings store is to be obtained")
     embeddingsGroup.add_argument(
         "-d", "--docPath", action="store", type=str,
@@ -157,38 +167,31 @@ def getOpts():
     else:
         logging.basicConfig(level=conf['logLevel'])
 
+    # check for consistency among switches
+    if conf['useEmbeddingsPath']:
+        for k in ('docPath', 'embeddingModel', 'chunkOverlap', 'chunkSize'):
+            if not conf.get(k):
+                logging.warning(f"Using saved embeddings, ignoring {k}")
+
     return conf
 
-#### TODO figure out switch constraints
-#### TODO add '-E <vectorStoreFile>' to save vectorStoreName, embeddingModel, docPath, chuckOverlap, chunkSize
-#### TODO add '-u <vectorStoreFile>' to use saved vectorStore
-#### TODO enforce cli input constraints and test configs file for constraint violations
-####  * if -E then -d, -e, -o are required and -s is not allowed
-####  * if -u then -S, -d, -e, -o, -s are not allowed
-####  * if -s: -d, -e not allowed
-####  * -d: not allowed if -s, otherwise required
-####  * -e: not allowed if -s, otherwise required
 
 def run(options):
-    if options['useEmbeddingsFile']:
-        print("Use EmbeddingsFile: TBD")
+    embeddingsStore = EmbeddingsStore.EmbeddingsStore()
+    if options['useEmbeddingsPath']:
+        print("Use saved embeddingsStore")
+        embeddingStore.useStore(options['useEmbeddingsPath'])
     else:
-        print("Create Embeddings Store: TBD")
-        '''
-        vectorStore = ????(options['vectorStore'], options[options['docPath']],
-                           options['embeddingModel'], options['chunkOverlap'], options[''])
-        '''
-    if options['saveEmbeddingsFile']:
-        print("Save EmbeddingsFile: TBD")
-
+        print("Create Embeddings Store:")
+        embeddingsStore.createStore(options['docPath'], options['chunkSize'],
+                                    options['chunkOverlap'], options['saveEmbeddingsPath'])
     print("Create Retriever: TBD")
-    '''
-    retreiver = ????(options['numToRetrieve'], options['relevanceThreshold'],
+    ''' 
+    retriever = ????(options['numToRetrieve'], options['relevanceThreshold'],
                      options['globalContext'], options[''], options[''])
     '''
-    print("Create RAG: TBD")
-    '''
-    rag = RetrievalAugmentedGenerator(vectorStore, retreiver)
+
+    rag = RAG(embeddingsStore, retriever, options['model'])
     if options['query']:
         print(f"Question: {options['query']}")
         thoughts, answer = rag.question(options['query'])
@@ -204,7 +207,6 @@ def run(options):
             if options['printThoughts']:
                 print(f"Thoughts: {thoughts}")
             print(f"Answer: {answer}")
-    '''
     logging.debug("Exiting")
 
 
