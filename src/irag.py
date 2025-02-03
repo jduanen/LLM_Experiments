@@ -180,7 +180,7 @@ def run(options):
     embeddingsStore = EmbeddingsStore(options['numRetrieves'], options['threshold'])
     if options['useEmbeddingsPath']:
         print("Use saved embeddingsStore")
-        embeddingStore.useStore(options['useEmbeddingsPath'])
+        embeddingsStore.useStore(options['useEmbeddingsPath'])
     else:
         print(f"Create Embeddings Store: {options['docPath']}, {options['chunkSize']}, {options['chunkOverlap']}, {options['saveEmbeddingsPath']}")
         embeddingsStore.createStore(options['docPath'], options['chunkSize'],
