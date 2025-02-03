@@ -13,8 +13,10 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 
 class EmbeddingsStore():
-    def __init__(self):
+    def __init__(self, K, threshold):
         self.vectorStore = None
+        self.K = K
+        self.threshold = threshold
         #### TODO make the embedding model be selectable
         self.embeddings = HuggingFaceEmbeddings()  # defaults to sentence-transformers/all-mpnet-base-v2
 
@@ -46,9 +48,21 @@ class EmbeddingsStore():
             raise ValueError("Already using a vector store")
         self.vectorStore = Chroma(embedding_function=self.embeddings, persist_directory=persistPath)
 
-    def getContext(self, question, kVal=None, threshold=None):
+    def setK(self, K):
+        self.K = K
+
+    def getK(self):
+        return(self.K)
+
+    def setThreshold(self, threshold):
+        self.threshold = threshold
+
+    def getThreshold(self, threshold):
+        return(self.threshold)
+
+    def getContext(self, question):
         # retrieve relevant context from the knowledge base/vector store
-        docs = self.vectorStore.similarity_search(question, k=kVal)
+        docs = self.vectorStore.similarity_search(question, k=self.K)
         #### TODO add thresholds
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
         #### THRESH = 0.3
@@ -57,8 +71,7 @@ class EmbeddingsStore():
         #### alternatively
 #        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
         context = "\n".join([doc.page_content for doc in docs])
-        return content
-
+        return context
 
 '''
     def load(self):
