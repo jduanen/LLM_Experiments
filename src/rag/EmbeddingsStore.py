@@ -6,10 +6,12 @@
 
 from pathlib import Path
 
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.document_loaders import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFium2Loader, TextLoader
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+import unstructured
 
 
 class EmbeddingsStore():
@@ -20,26 +22,30 @@ class EmbeddingsStore():
         #### TODO make the embedding model be selectable
         self.embeddings = HuggingFaceEmbeddings()  # defaults to sentence-transformers/all-mpnet-base-v2
 
-    # can override for different loader
-    def _loadDocs(self, docsPath):
-        loader = TextLoader(docsPath)
-        return loader.load()
-
-    # can override for different splitter
-    def _splitDocs(self, chunkSize, chunkOverlap):
-        textSplitter = CharacterTextSplitter(chunk_size=chunkSize,
-                                             chunk_overlap=chunkOverlap)
-        return textSplitter.split_documents(self.docs)
-
+    # can override for different loader and splitter
     def createStore(self, docsPath, chunkSize, chunkOverlap, persistPath=None):
         if self.vectorStore:
             raise ValueError("Already using a vector store")
+
         self.docsPath = Path(docsPath)
-        self.chunkSize = chunkSize
-        self.chunkOverlap = chunkOverlap
+        self.chunkSize = chunkSize if not persistPath else None
+        self.chunkOverlap = chunkOverlap if not persistPath else None
         self.persistPath = persistPath
-        self.docs = self._loadDocs(self.docsPath)
-        self.texts = self._splitDocs(chunkSize, chunkOverlap)
+        self.texts = []
+
+        textSplitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n", " ", ""],
+                                                      chunk_size=chunkSize,
+                                                      chunk_overlap=chunkOverlap)
+        for filePath in self.docsPath.glob("**/*.txt", case_sensitive=False):
+            loader = TextLoader(str(filePath))
+            pages = loader.load()
+            self.texts += textSplitter.split_documents(pages)
+
+        for filePath in self.docsPath.glob("**/*.pdf", case_sensitive=False):
+            loader = PyPDFium2Loader(str(filePath))
+            pages = loader.load()
+            self.texts += textSplitter.split_documents(pages)
+
         #### TODO make vector store selectable
         self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings, persist_directory=self.persistPath)
 
@@ -72,19 +78,3 @@ class EmbeddingsStore():
 #        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
         context = "\n".join([doc.page_content for doc in docs])
         return context
-
-'''
-    def load(self):
-        if self.file_path.suffix.lower() == '.pdf':
-            self.loader = PyPDFium2Loader(str(self.file_path))
-        elif self.file_path.suffix.lower() == '.txt':
-            self.loader = TextLoader(str(self.file_path))
-        else:
-            raise ValueError("Unsupported file format. Only PDF and TXT files are supported.")
-        return self.loader.load()
-
-    def load_and_split(self, text_splitter=None):
-        if not self.loader:
-            self.load()
-        return self.loader.load_and_split(text_splitter)
-'''

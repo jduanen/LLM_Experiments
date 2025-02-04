@@ -14,13 +14,12 @@
 import logging
 import numpy as np
 import os
-import re
 from string import Template
 
 #import faiss
 import ollama
 
-import pdb  #### TMP TMP TMP
+import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 
 #from rag.retrievers import pdfRetriever, txtRetriever
 
@@ -49,19 +48,7 @@ Answer:
     
         # generate an answer with the model, using the combined context
         response = self.client.generate(model=self.model, prompt=fullPrompt)
-        pattern = f"({re.escape('<think>')}.*?{re.escape('</think>')})"
-        parts = re.split(pattern, response['response'], maxsplit=1, flags=re.DOTALL)
-        if len(parts) == 3:
-            thoughts = parts[1]
-            answer = parts[2]
-        elif len(parts) == 1:
-            thoughts = None
-            answer = parts[0]
-        else:
-            logging.error(f"Confused response: {parts}")
-            thoughts = None
-            answer = None
-        return thoughts, answer
+        return response
 
 if __name__ == "__main__":
     logging.basicConfig(level=LOG_LEVEL)
