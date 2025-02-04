@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import yaml
 
@@ -27,12 +28,14 @@ DEF_LLM_NAME = "deepseek-r1:1.5b"
 DEF_CHUNK_SIZE = 2000
 DEF_CHUNK_OVERLAP = 0
 
+DEF_OUTPUT_FORMAT = "????"
+
 # instruct model to respond based only on the retrieved context
 DEF_GLOBAL_CONTEXT = """
 You are an experienced programmer, speaking to another experienced programmer.
 Use ONLY the context below.
 If unsure, say "I don't know".
-Keep answers under 4 sentences.
+Keep answers under 12 sentences.
 """
 
 DEFAULTS = {
@@ -46,6 +49,7 @@ DEFAULTS = {
     "logFile": None,
     "model": DEF_LLM_NAME,
     "numRetrieves": 4,
+    "outputFormat": DEF_OUTPUT_FORMAT,
     "printThoughts": False,
     "query": None,
     "saveEmbeddingsPath": False,
@@ -63,7 +67,8 @@ def getOpts():
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
 [-q <query>] [-g <globalContext>] [-p <printThoughts>] [-k <numRetrieves>] [-t <threshold>] \
 [-E <saveEmbeddingsPath>] [-u <useEmbeddingsPath>] \
-[-d <docPath>] [-e <embeddingModel>] [-s <vectorStore>] [-S <similarity>] [-C <chunkSize>] [-o <chunkOverlap>]"
+[-d <docPath>] [-e <embeddingModel>] [-s <vectorStore>] [-S <similarity>] [-C <chunkSize>] [-O <chunkOverlap>] \
+[-o <outputFormat>]"
 
     ap = argparse.ArgumentParser()
     generalGroup = ap.add_argument_group("General Options")
@@ -119,7 +124,7 @@ def getOpts():
         "-C", "--chunkSize", action="store", type=int,
         help="Max number of bytes in each document chunk")
     embeddingsGroup.add_argument(
-        "-o", "--chuckOverlap", action="store", type=int,
+        "-O", "--chuckOverlap", action="store", type=int,
         help="Number of bytes of overlap between adjacent document chunks")
     embeddingsGroup.add_argument(
         "-S", "--similarity", action="store", type=str,
@@ -129,6 +134,11 @@ def getOpts():
         "-s", "--vectorStore", action="store", type=str,
         choices=["ChromaDB", "FAISS"],
         help="Name of the Vector Store to use to store and access document embeddings")
+    outputGroup = ap.add_argument_group("Output Options")
+    outputGroup.add_argument(
+        "-o" "--outputFormat", action="store", type=str,
+        choices=["HUMAN", "JSON", "????"],
+        help="Format of output")
     cliOpts = ap.parse_args().__dict__
 
     conf = {'cli': cliOpts, 'confFile': {}, 'config': {}}
@@ -175,33 +185,69 @@ def getOpts():
 
     return conf
 
-
 def run(options):
+    def handleResponse(query, response):
+        # split up response into it's parts
+        pattern = f"({re.escape('<think>')}.*?{re.escape('</think>')})"
+        parts = re.split(pattern, response['response'], maxsplit=1, flags=re.DOTALL)
+        if len(parts) == 3:
+            thoughts = parts[1]
+            answer = parts[2]
+        elif len(parts) == 1:
+            thoughts = None
+            answer = parts[0]
+        else:
+            logging.error(f"Confused response: {parts}")
+            thoughts = None
+            answer = None
+        stats = {
+            'totalDuration': response['total_duration'],
+            'loadDuration': response['load_duration'],
+            'promptEvalCount': response['prompt_eval_count'],
+            'promptEvalDuration': response['prompt_eval_duration'],
+            'evalCount': response['eval_count'],
+            'evalDuration': response['eval_duration']
+        }
+        #### TODO figure out if the full prompt/context is available in response
+
+        #### output based on options['outFormat']: human readable, delimiter-separated strings, json
+
+        print("vvvvvvvvvvvvvvvv")
+        print(f"Question: {query}")
+        if options['printThoughts']:
+            print("----------------")
+            print(f"Thoughts: {thoughts}")
+        print("****************")
+        print(f"Answer: {answer}")
+        if options['verbose'] > 3:
+            print("Stats:")
+            print(f"    Total Duration: {stats['totalDuration']}")
+            print(f"    Load Duration: {stats['loadDuration']}")
+            print(f"    Prompt Eval Tokens: {stats['promptEvalCount']}")
+            print(f"    Prompt Eval Duration: {stats['promptEvalDuration']}")
+            print(f"    Eval Count: {stats['evalCount']}")
+            print(f"    Eval Duration: {stats['evalDuration']}")
+        print("^^^^^^^^^^^^^^^^\n")
+
     embeddingsStore = EmbeddingsStore(options['numRetrieves'], options['threshold'])
     if options['useEmbeddingsPath']:
-        print("Use saved embeddingsStore")
         embeddingsStore.useStore(options['useEmbeddingsPath'])
     else:
-        print(f"Create Embeddings Store: {options['docPath']}, {options['chunkSize']}, {options['chunkOverlap']}, {options['saveEmbeddingsPath']}")
         embeddingsStore.createStore(options['docPath'], options['chunkSize'],
                                     options['chunkOverlap'], options['saveEmbeddingsPath'])
-
     rag = RetrievalAugmentedGeneration(embeddingsStore, options['model'], options['globalContext'])
-    if options['query']:
-        print(f"Question: {options['query']}")
-        thoughts, answer = rag.answerQuestion(options['query'])
-        if options['printThoughts']:
-            print(f"Thoughts: {thoughts}")
-        print(f"Answer: {answer}")
+
+    query = options['query']
+    if query:
+        response = rag.answerQuestion(query)
+        handleResponse(query, response)
     else:
         while True:
             query = input("Question: ")
             if not query:
                 break
-            thoughts, answer = rag.answerQuestion(query)
-            if options['printThoughts']:
-                print(f"Thoughts: {thoughts}")
-            print(f"Answer: {answer}")
+            response = rag.answerQuestion(query)
+            handleResponse(query, response)
     logging.debug("Exiting")
 
 
