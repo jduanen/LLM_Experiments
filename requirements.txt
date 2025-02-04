@@ -6,3 +6,5 @@ langchain-huggingface
 logging
 numpy
 ollama
+pypdfium2
+unstructured
