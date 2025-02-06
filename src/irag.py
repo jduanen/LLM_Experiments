@@ -28,14 +28,14 @@ DEF_LLM_NAME = "deepseek-r1:1.5b"
 DEF_CHUNK_SIZE = 2000
 DEF_CHUNK_OVERLAP = 0
 
-DEF_OUTPUT_FORMAT = "????"
+DEF_OUTPUT_FORMAT = "HUMAN"
 
 # instruct model to respond based only on the retrieved context
 DEF_GLOBAL_CONTEXT = """
 You are an experienced programmer, speaking to another experienced programmer.
 Use ONLY the context below.
 If unsure, say "I don't know".
-Keep answers under 12 sentences.
+Keep answers under 8 sentences.
 """
 
 DEFAULTS = {
@@ -94,9 +94,6 @@ def getOpts():
         "-g", "--globalContext", action="store", type=str,
         help="System instructions to be applied to all queries")
     queryGroup.add_argument(
-        "-p", "--printThoughts", action="store_true", default=False,
-        help="Enable printing of chain of thought output from model")
-    queryGroup.add_argument(
         "-q", "--query", action="store", type=str,
         help="Question to ask of the model")
     queryGroup.add_argument(
@@ -136,9 +133,12 @@ def getOpts():
         help="Name of the Vector Store to use to store and access document embeddings")
     outputGroup = ap.add_argument_group("Output Options")
     outputGroup.add_argument(
-        "-o" "--outputFormat", action="store", type=str,
-        choices=["HUMAN", "JSON", "????"],
+        "-o", "--outputFormat", action="store", type=str,
+        choices=["HUMAN", "JSON"],
         help="Format of output")
+    outputGroup.add_argument(
+        "-p", "--printThoughts", action="store_true", default=False,
+        help="Enable printing of chain of thought output from model")
     cliOpts = ap.parse_args().__dict__
 
     conf = {'cli': cliOpts, 'confFile': {}, 'config': {}}
@@ -168,7 +168,7 @@ def getOpts():
     for opt in DEFAULTS.keys():
         _configSelect(opt)
 
-    if cliOpts['verbose'] > 2:
+    if cliOpts['verbose'] > 3:
         json.dump(conf, sys.stdout, indent=4, sort_keys=True)
         print("")
 
@@ -186,7 +186,7 @@ def getOpts():
     return conf
 
 def run(options):
-    def handleResponse(query, response):
+    def handleResponse():
         # split up response into it's parts
         pattern = f"({re.escape('<think>')}.*?{re.escape('</think>')})"
         parts = re.split(pattern, response['response'], maxsplit=1, flags=re.DOTALL)
@@ -205,29 +205,42 @@ def run(options):
             'loadDuration': response['load_duration'],
             'promptEvalCount': response['prompt_eval_count'],
             'promptEvalDuration': response['prompt_eval_duration'],
+            'promptEvalRate': (response['prompt_eval_count'] * 1000000000) / response['prompt_eval_duration'],
             'evalCount': response['eval_count'],
-            'evalDuration': response['eval_duration']
+            'evalDuration': response['eval_duration'],
+            'evalRate': (response['eval_count'] * 1000000000.0) / response['eval_duration'],
         }
-        #### TODO figure out if the full prompt/context is available in response
 
-        #### output based on options['outFormat']: human readable, delimiter-separated strings, json
+        #### TODO figure out how to get the full prompt (i.e., context + query) and print it too
 
-        print("vvvvvvvvvvvvvvvv")
-        print(f"Question: {query}")
-        if options['printThoughts']:
-            print("----------------")
-            print(f"Thoughts: {thoughts}")
-        print("****************")
-        print(f"Answer: {answer}")
-        if options['verbose'] > 3:
-            print("Stats:")
-            print(f"    Total Duration: {stats['totalDuration']}")
-            print(f"    Load Duration: {stats['loadDuration']}")
-            print(f"    Prompt Eval Tokens: {stats['promptEvalCount']}")
-            print(f"    Prompt Eval Duration: {stats['promptEvalDuration']}")
-            print(f"    Eval Count: {stats['evalCount']}")
-            print(f"    Eval Duration: {stats['evalDuration']}")
-        print("^^^^^^^^^^^^^^^^\n")
+        print(f">>> {options['outputFormat']}")
+        if options['outputFormat'] == "HUMAN":
+            print(f"\nQuestion: {query}")
+            if options['printThoughts']:
+                print("----------------")
+                print(f"\nThoughts: {thoughts}")
+            print(f"\nAnswer: {answer}")
+            if options['verbose'] > 1:
+                print("\nStats:")
+                print(f"    Total Duration:       {(stats['totalDuration'] / 1000000000.0):.2f} secs")
+                print(f"    Load Duration:        {(stats['loadDuration'] / 1000000.0):.2f} msecs")
+                print(f"    Prompt Eval Tokens:   {stats['promptEvalCount']:.2f} tokens")
+                print(f"    Prompt Eval Duration: {(stats['promptEvalDuration'] / 1000000.0):.2f} msecs")
+                print(f"    Prompt Eval Rate:     {stats['promptEvalRate']:.2f} tokens/sec")
+                print(f"    Eval Count:           {stats['evalCount']:.2f} tokens")
+                print(f"    Eval Duration:        {(stats['evalDuration'] / 1000000000.0):.2f} secs")
+                print(f"    Eval Rate:            {stats['evalRate']:.2f} tokens/sec")
+            print("\n")
+        elif options['outputFormat'] == "JSON":
+            outDict = {'query': query, 'answer': answer, 'reason': response.done_reason}
+            if options['printThoughts']:
+                outDict['thoughts'] = thoughts
+            if options['verbose'] > 1:
+                outDict['stats'] = stats
+            print(json.dumps(outDict, indent=4, sort_keys=True))
+            print("\n")
+        else:
+            logging.warning(f"Unknown output format: {options['outputFormat']}")
 
     embeddingsStore = EmbeddingsStore(options['numRetrieves'], options['threshold'])
     if options['useEmbeddingsPath']:
@@ -240,14 +253,14 @@ def run(options):
     query = options['query']
     if query:
         response = rag.answerQuestion(query)
-        handleResponse(query, response)
+        handleResponse()
     else:
         while True:
             query = input("Question: ")
             if not query:
                 break
             response = rag.answerQuestion(query)
-            handleResponse(query, response)
+            handleResponse()
     logging.debug("Exiting")
 
 
