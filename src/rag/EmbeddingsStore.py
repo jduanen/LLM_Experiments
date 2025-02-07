@@ -4,8 +4,10 @@
 #
 ################################################################################
 
+import logging
 from pathlib import Path
 
+import chromadb
 from langchain_community.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFium2Loader, TextLoader
@@ -14,16 +16,20 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import unstructured
 
 
+logger = logging.getLogger(__name__)
+
+
 class EmbeddingsStore():
-    def __init__(self, K, threshold):
+    def __init__(self, modelName, K, threshold):
         self.vectorStore = None
         self.K = K
         self.threshold = threshold
-        #### TODO make the embedding model be selectable
-        self.embeddings = HuggingFaceEmbeddings()  # defaults to sentence-transformers/all-mpnet-base-v2
+        self.embeddings = HuggingFaceEmbeddings(model_name=modelName)
+        self.clientSettings = chromadb.config.Settings(anonymized_telemetry=False)
 
     # can override for different loader and splitter
     def createStore(self, docsPath, chunkSize, chunkOverlap, persistPath=None):
+        logger.debug(f"Create Embeddings Store: {docsPath}, {chunkSize}, {chunkOverlap}, {persistPath}")
         if self.vectorStore:
             raise ValueError("Already using a vector store")
 
@@ -36,23 +42,38 @@ class EmbeddingsStore():
         textSplitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n", " ", ""],
                                                       chunk_size=chunkSize,
                                                       chunk_overlap=chunkOverlap)
+        txtDocs = 0
+        numPages = 0
         for filePath in self.docsPath.glob("**/*.txt", case_sensitive=False):
             loader = TextLoader(str(filePath))
             pages = loader.load()
+            numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
+            txtDocs += 1
+        logger.info(f"# Text Docs: {txtDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
 
+        pdfDocs = 0
+        numPages = 0
         for filePath in self.docsPath.glob("**/*.pdf", case_sensitive=False):
             loader = PyPDFium2Loader(str(filePath))
             pages = loader.load()
+            numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
+            pdfDocs += 1
+        logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
 
         #### TODO make vector store selectable
-        self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings, persist_directory=self.persistPath)
+        self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings,
+                                                 persist_directory=self.persistPath,
+                                                 client_settings=self.clientSettings)
 
     def useStore(self, persistPath):
+        logger.debug(f"Use Existing Embeddings Store: {persistPath}")
         if self.vectorStore:
-            raise ValueError("Already using a vector store")
-        self.vectorStore = Chroma(embedding_function=self.embeddings, persist_directory=persistPath)
+            raise ValueError("Already using a vector store, can't create another one")
+        self.vectorStore = Chroma(embedding_function=self.embeddings,
+                                  persist_directory=persistPath,
+                                  client_settings=self.clientSettings)
 
     def setK(self, K):
         self.K = K
