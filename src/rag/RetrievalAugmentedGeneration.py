@@ -33,9 +33,20 @@ class RetrievalAugmentedGeneration():
         self.model = modelName
         self.globalContext = globalContext
         self.client = ollama.Client()
+        response = self.client.show(modelName)
+        self.modelInfo = response.modelinfo
+        keys = [k for k in self.modelInfo.keys() if k.endswith("context_length")]
+        if not keys:
+            raise AssertionError("Context size key not found")
+        elif len(keys) > 1:
+            raise Exception(f"Multiple context size keys found: {keys}")
+        else:
+            key = keys[0]
+        self.contextSize = self.modelInfo[key]
+        logger.info(f"Model: {self.model}, Context Size: {self.contextSize}")
         logger.debug("Create RAG")
 
-    def answerQuestion(self, question, numDocs=None, threshold=None):
+    def answerQuestion(self, question):
         # retrieve relevant context from the knowledge base/vector store
         logger.debug("Answer Question")
         metadata = {}
