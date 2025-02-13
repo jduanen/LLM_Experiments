@@ -21,29 +21,29 @@ import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 logger = logging.getLogger(__name__)
 
 
+#### TODO make vector store selectable
+
 class EmbeddingsStore():
-    def __init__(self, modelName, K, threshold):
+    def __init__(self, modelName, chunkSize, chunkOverlap):
         self.vectorStore = None
-        self.K = K
-        self.threshold = threshold
+        self.chunkSize = chunkSize
+        self.chunkOverlap = chunkOverlap
         self.embeddings = HuggingFaceEmbeddings(model_name=modelName)
         self.clientSettings = chromadb.config.Settings(anonymized_telemetry=False)
 
     # can override for different loader and splitter
-    def createStore(self, docsPath, chunkSize, chunkOverlap, persistPath=None):
-        logger.debug(f"Create Embeddings Store: {docsPath}, {chunkSize}, {chunkOverlap}, {persistPath}")
+    def createStore(self, docsPath, persistPath=None):
         if self.vectorStore:
-            raise ValueError("Already using a vector store")
-
+            raise ValueError("Already using a vector store, must delete it first")
         self.docsPath = Path(docsPath)
-        self.chunkSize = chunkSize if not persistPath else None
-        self.chunkOverlap = chunkOverlap if not persistPath else None
         self.persistPath = persistPath
         self.texts = []
+        logger.debug(f"Create Embeddings Store: {docsPath}, {self.chunkSize}, {self.chunkOverlap}, {self.threshold}, {self.persistPath}")
 
         textSplitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n", " ", ""],
-                                                      chunk_size=chunkSize,
-                                                      chunk_overlap=chunkOverlap)
+                                                      chunk_size=self.chunkSize,
+                                                      chunk_overlap=self.chunkOverlap)
+        #### TODO Dry this up
         txtDocs = 0
         numPages = 0
         for filePath in self.docsPath.glob("**/*.txt", case_sensitive=False):
@@ -63,12 +63,9 @@ class EmbeddingsStore():
             self.texts += textSplitter.split_documents(pages)
             pdfDocs += 1
         logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
-        pdb.set_trace()  #### TMP TMP TMP
-
         if not txtDocs and not pdfDocs:
             raise AssertionError("No documents")
 
-        #### TODO make vector store selectable
         self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings,
                                                  persist_directory=self.persistPath,
                                                  client_settings=self.clientSettings)
@@ -76,26 +73,19 @@ class EmbeddingsStore():
     def useStore(self, persistPath):
         logger.debug(f"Use Existing Embeddings Store: {persistPath}")
         if self.vectorStore:
-            raise ValueError("Already using a vector store, can't create another one")
+            raise ValueError("Already using a vector store, can't create another one without first doing a delete")
         self.vectorStore = Chroma(embedding_function=self.embeddings,
                                   persist_directory=persistPath,
                                   client_settings=self.clientSettings)
 
-    def setK(self, K):
-        self.K = K
+    def deleteStore(self):
+        raise Exception("TBD")
+        self.vectorStore = None
 
-    def getK(self):
-        return(self.K)
-
-    def setThreshold(self, threshold):
-        self.threshold = threshold
-
-    def getThreshold(self, threshold):
-        return(self.threshold)
-
-    def getContext(self, question):
+    #### FIXME allow for different types similarity functions -- e.g., dot and cosine
+    def getContext(self, question, maxContext, threshold):
         # retrieve relevant context from the knowledge base/vector store
-        results = self.vectorStore.similarity_search_with_score(question, k=self.K)
+        results = self.vectorStore.similarity_search_with_score(question, k=(maxContext // self.chunkSize))
         logger.info(f"# Docs retrieved: {len(results)}")
         chunks = [chunk for chunk, score in results]
         titles = {chunk.metadata['source']: sum(1 for item in chunks if item.metadata['source'] == chunk.metadata['source']) for chunk in chunks}
@@ -103,13 +93,10 @@ class EmbeddingsStore():
         scores = [(chunk.metadata['source'], score) for chunk, score in results]
         logger.info(scores)
         pdb.set_trace()  #### TMP TMP TMP
-        #### TODO add thresholds
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
-        #### THRESH = 0.3
-#        results = self.vectorStore.similarity_search_with_score(question, k=kVal)
-#        filteredResults = [doc for doc, score in results if score <= THRESH]
+        filteredChunks = [chunk for chunk, score in results if score <= threshold]
         #### alternatively
 #        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
-        context = "\n".join([chunk.page_content for chunk in chunks])
-        logger.info(f"Size of Context: {len(context)} Bytes")
+        context = "\n".join([chunk.page_content for chunk in filteredChunks])
+        logger.info(f"Size of thresholded context: {len(context)} Bytes")
         return context
