@@ -28,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class RetrievalAugmentedGeneration():
-    def __init__(self, embeddingsStore, modelName, globalContext=""):
+    def __init__(self, embeddingsStore, modelName, threshold, globalContext=""):
         self.embeddingsStore = embeddingsStore
         self.model = modelName
+        self.threshold = threshold
         self.globalContext = globalContext
         self.client = ollama.Client()
         response = self.client.show(modelName)
@@ -51,7 +52,7 @@ class RetrievalAugmentedGeneration():
         logger.debug("Answer Question")
         metadata = {}
         startTime = time.time()
-        context = self.embeddingsStore.getContext(question)
+        context = self.embeddingsStore.getContext(question, self.contextSize, self.threshold)
         metadata['getContextTime'] = time.time() - startTime
         metadata['context'] = context
 
