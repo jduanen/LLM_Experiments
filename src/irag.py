@@ -29,13 +29,15 @@ DEF_LLM_NAME = "deepseek-r1:8b"
 DEF_CHUNK_SIZE = 1000
 DEF_CHUNK_OVERLAP = 500
 
+DEF_THRESHOLD = 1.15  # N.B. Assumes ChromaDB uses Cosine similarity
+
 DEF_EMBD_MODEL = "all-mpnet-base-v2"
 
 DEF_OUTPUT_FORMAT = "HUMAN"
 
 DEF_TEMPERATURE = 0.4
 DEF_NUM_SENTENCES = 10
-DEF_PERSONA = "physicist"  # "programmer"
+DEF_PERSONA = "programmer"  # "physicist"
 
 # instruct model to respond based only on the retrieved context
 DEF_GLOBAL_CONTEXT = f"""
@@ -56,13 +58,12 @@ DEFAULTS = {
     "logLevel": DEF_LOG_LEVEL,
     "logFile": None,
     "model": DEF_LLM_NAME,
-    "numRetrieves": 4,
     "outputFormat": DEF_OUTPUT_FORMAT,
     "printThoughts": False,
     "query": None,
     "saveEmbeddingsPath": None,
     "similarity": "Cosine",
-    "threshold": None,
+    "threshold": DEF_THRESHOLD,
     "useEmbeddingsPath": None,
     "vectorStore": "ChromaDB",
     "verbose": False
@@ -71,7 +72,7 @@ DEFAULTS = {
 
 def getOpts():
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
-[-q <query>] [-g <globalContext>] [-p <printThoughts>] [-k <numRetrieves>] [-t <threshold>] \
+[-q <query>] [-g <globalContext>] [-p <printThoughts>] [-t <threshold>] \
 [-E <saveEmbeddingsPath>] [-u <useEmbeddingsPath>] \
 [-d <docPath>] [-e <embeddingModel>] [-s <vectorStore>] [-S <similarity>] [-C <chunkSize>] [-O <chunkOverlap>] \
 [-o <outputFormat>]"
@@ -103,10 +104,7 @@ def getOpts():
         "-q", "--query", action="store", type=str,
         help="Question to ask of the model")
     queryGroup.add_argument(
-        "-k", "--numRetrieves", action="store", type=int,
-        help="Number of document chunks to retrieve for a query (int)")
-    queryGroup.add_argument(
-        "-t", "--threshold", action="store", type=int,
+        "-t", "--threshold", action="store", type=float,
         help="Threshold above/below (depending on the similarity metric being used) which retrievals are considered valid")
 
     embeddingsGroup = ap.add_argument_group("Embeddings Store Options")
@@ -256,14 +254,15 @@ def run(options):
             logging.warning(f"Unknown output format: {options['outputFormat']}")
 
     startTime = time.time()
-    embeddingsStore = EmbeddingsStore(options['embeddingModel'], options['numRetrieves'], options['threshold'])
+    embeddingsStore = EmbeddingsStore(options['embeddingModel'], options['chunkSize'],
+                                      options['chunkOverlap'])
     if options['useEmbeddingsPath']:
         embeddingsStore.useStore(options['useEmbeddingsPath'])
     else:
         # N.B. if saveEmbeddingsPath is None, then don't persist the vector store
-        embeddingsStore.createStore(options['docPath'], options['chunkSize'],
-                                    options['chunkOverlap'], options['saveEmbeddingsPath'])
-    rag = RetrievalAugmentedGeneration(embeddingsStore, options['model'], options['globalContext'])
+        embeddingsStore.createStore(options['docPath'], options['saveEmbeddingsPath'])
+    rag = RetrievalAugmentedGeneration(embeddingsStore, options['model'],
+                                       options['threshold'], options['globalContext'])
     embStoreSetupTime = time.time() - startTime
 
     query = options['query']
