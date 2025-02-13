@@ -59,6 +59,7 @@ DEFAULTS = {
     "logFile": None,
     "model": DEF_LLM_NAME,
     "outputFormat": DEF_OUTPUT_FORMAT,
+    "printContext": False,
     "printThoughts": False,
     "query": None,
     "saveEmbeddingsPath": None,
@@ -72,10 +73,10 @@ DEFAULTS = {
 
 def getOpts():
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
-[-q <query>] [-g <globalContext>] [-p <printThoughts>] [-t <threshold>] \
+[-q <query>] [-g <globalContext>] [-t <threshold>] \
 [-E <saveEmbeddingsPath>] [-u <useEmbeddingsPath>] \
 [-d <docPath>] [-e <embeddingModel>] [-s <vectorStore>] [-S <similarity>] [-C <chunkSize>] [-O <chunkOverlap>] \
-[-o <outputFormat>]"
+[-o <outputFormat>] [-p <printThoughts>] [-x <printContext>]"
 
     ap = argparse.ArgumentParser()
     generalGroup = ap.add_argument_group("General Options")
@@ -143,6 +144,9 @@ def getOpts():
     outputGroup.add_argument(
         "-p", "--printThoughts", action="store_true", default=False,
         help="Enable printing of chain of thought output from model")
+    outputGroup.add_argument(
+        "-x", "--printContext", action="store_true", default=False,
+        help="Enable printing of the context given to the model with the query")
     cliOpts = ap.parse_args().__dict__
 
     conf = {'cli': cliOpts, 'confFile': {}, 'config': {}}
@@ -217,7 +221,7 @@ def run(options):
 
         if options['outputFormat'] == "HUMAN":
             print(f"\nQuestion: {query}")
-            if options['verbose'] > 1:
+            if options['printContext']:
                 print(f"\nContext:\n{metadata['context']}")
             if options['printThoughts']:
                 print(f"\nThoughts:\n{thoughts}")
