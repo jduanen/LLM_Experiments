@@ -15,6 +15,8 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 import unstructured
 
+import pdb  ## pdb.set_trace()  #### TMP TMP TMP
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,10 @@ class EmbeddingsStore():
             self.texts += textSplitter.split_documents(pages)
             pdfDocs += 1
         logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
+        pdb.set_trace()  #### TMP TMP TMP
+
+        if not txtDocs and not pdfDocs:
+            raise AssertionError("No documents")
 
         #### TODO make vector store selectable
         self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings,
@@ -89,7 +95,14 @@ class EmbeddingsStore():
 
     def getContext(self, question):
         # retrieve relevant context from the knowledge base/vector store
-        docs = self.vectorStore.similarity_search(question, k=self.K)
+        results = self.vectorStore.similarity_search_with_score(question, k=self.K)
+        logger.info(f"# Docs retrieved: {len(results)}")
+        chunks = [chunk for chunk, score in results]
+        titles = {chunk.metadata['source']: sum(1 for item in chunks if item.metadata['source'] == chunk.metadata['source']) for chunk in chunks}
+        logger.info(titles)
+        scores = [(chunk.metadata['source'], score) for chunk, score in results]
+        logger.info(scores)
+        pdb.set_trace()  #### TMP TMP TMP
         #### TODO add thresholds
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
         #### THRESH = 0.3
@@ -97,5 +110,6 @@ class EmbeddingsStore():
 #        filteredResults = [doc for doc, score in results if score <= THRESH]
         #### alternatively
 #        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
-        context = "\n".join([doc.page_content for doc in docs])
+        context = "\n".join([chunk.page_content for chunk in chunks])
+        logger.info(f"Size of Context: {len(context)} Bytes")
         return context
