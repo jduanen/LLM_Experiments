@@ -227,7 +227,7 @@ def run(options):
             if options['verbose'] > 1:
                 print("\nPerformance:")
                 print(f"    Setup Embs:  {metadata['embStoreSetupTime']:.2f} secs")
-                print(f"    Get Context: {metadata['getContextTime']:.2f} secs")
+                print(f"    Get Context: {metadata['getContextTime']:.5f} secs")
                 print(f"    Generate:    {metadata['generateTime']:.2f} secs")
                 print("\nLLM Generate Stats:")
                 print(f"    Total Duration:       {(stats['totalDuration'] / 1000000000.0):.2f} secs")
