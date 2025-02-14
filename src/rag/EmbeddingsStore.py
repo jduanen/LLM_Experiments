@@ -4,8 +4,11 @@
 #
 ################################################################################
 
+import json
 import logging
+import os
 from pathlib import Path
+import shutil
 
 import chromadb
 from langchain_community.document_loaders import DirectoryLoader
@@ -25,11 +28,14 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingsStore():
     def __init__(self, modelName, chunkSize, chunkOverlap):
-        self.vectorStore = None
+        self.embeddings = HuggingFaceEmbeddings(model_name=modelName)
         self.chunkSize = chunkSize
         self.chunkOverlap = chunkOverlap
-        self.embeddings = HuggingFaceEmbeddings(model_name=modelName)
         self.clientSettings = chromadb.config.Settings(anonymized_telemetry=False)
+        self.vectorStore = None
+        self.metadataPath = None
+        self.persistPath = None
+        self.docsStats = {}
 
     # can override for different loader and splitter
     def createStore(self, docsPath, persistPath=None):
@@ -38,7 +44,6 @@ class EmbeddingsStore():
         self.docsPath = Path(docsPath)
         self.persistPath = persistPath
         self.texts = []
-        logger.debug(f"Create Embeddings Store: {docsPath}, {self.chunkSize}, {self.chunkOverlap}, {self.threshold}, {self.persistPath}")
 
         textSplitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n", " ", ""],
                                                       chunk_size=self.chunkSize,
@@ -52,6 +57,7 @@ class EmbeddingsStore():
             numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
             txtDocs += 1
+        self.docsStats['text'] = {'docs': txtDocs, 'pages': numPages, 'chunks': len(self.texts)}
         logger.info(f"# Text Docs: {txtDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
 
         pdfDocs = 0
@@ -62,24 +68,57 @@ class EmbeddingsStore():
             numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
             pdfDocs += 1
+        self.docsStats['pdf'] = {'docs': pdfDocs, 'pages': numPages, 'chunks': len(self.texts)}
         logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
         if not txtDocs and not pdfDocs:
-            raise AssertionError("No documents")
+            logger.error("No documents found")
+            return None
 
         self.vectorStore = Chroma.from_documents(self.texts, embedding=self.embeddings,
                                                  persist_directory=self.persistPath,
                                                  client_settings=self.clientSettings)
 
+        self.metadataPath = Path(self.persistPath) / "metadata"
+        metadata = {'docsPath': self.docsPath.as_posix(), 'chunkSize': self.chunkSize,
+                    'chunkOverlap': self.chunkOverlap, 'docsStats': self.docsStats}
+        logger.info(f"Emeddings Store metadata: {metadata}")
+        if self.metadataPath.exists():
+            logger.warning(f"Metadata file already exists, will be overwritten: {self.metadataPath}")
+        with open(self.metadataPath, 'w') as f:
+            json.dump(metadata, f, indent=4, sort_keys=True)
+        logger.debug(f"Create Embeddings Store metadata file: {self.metadataPath}")
+        return metadata
+
     def useStore(self, persistPath):
-        logger.debug(f"Use Existing Embeddings Store: {persistPath}")
         if self.vectorStore:
-            raise ValueError("Already using a vector store, can't create another one without first doing a delete")
+            logger.error("Already using a vector store, can't create another one without first doing a delete")
+            return None
+        if not persistPath:
+            logger.error("Must provide path to saved Emeddings Store")
+            return None
+        self.metadataPath = Path(persistPath) / "metadata"
+        if not os.path.exists(self.metadataPath):
+            logger.error(f"Invalid path to saved Emeddings Store: {self.metadataPath}")
+            self.metadataPath = None
+            return None
+        logger.debug(f"Use Existing Embeddings Store: {self.metadataPath}")
         self.vectorStore = Chroma(embedding_function=self.embeddings,
                                   persist_directory=persistPath,
                                   client_settings=self.clientSettings)
+        with open(self.metadataPath, 'r') as metadataFile:
+            metadata = json.load(metadataFile)
+        self.docsPath = metadata['docsPath']
+        self.chunkSize = metadata['chunkSize']
+        self.chunkOverlap = metadata['chunkOverlap']
+        self.docsStats = metadata['docsStats']
+        return metadata
 
     def deleteStore(self):
-        raise Exception("TBD")
+        if self.persistPath and os.path.exists(self.persistPath):
+            logger.info(f"Deleting embeddings store: {self.persistPath}")
+            shutil.rmtree(self.persistPath)
+        else:
+            logger.warning("No save path for Embeddings Store, nothing to delete")
         self.vectorStore = None
 
     #### FIXME allow for different types similarity functions -- e.g., dot and cosine
@@ -92,11 +131,10 @@ class EmbeddingsStore():
         logger.info(titles)
         scores = [(chunk.metadata['source'], score) for chunk, score in results]
         logger.info(scores)
-        pdb.set_trace()  #### TMP TMP TMP
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
         filteredChunks = [chunk for chunk, score in results if score <= threshold]
         #### alternatively
 #        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
         context = "\n".join([chunk.page_content for chunk in filteredChunks])
-        logger.info(f"Size of thresholded context: {len(context)} Bytes")
+        logger.info(f"Size of thresholded (<= {threshold}) context: {len(context)} Bytes")
         return context
