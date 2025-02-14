@@ -43,6 +43,7 @@ class EmbeddingsStore():
         self.docsPath = Path(docsPath)
         self.persistPath = persistPath
         self.texts = []
+        self.docsStats['totals'] = {'bytes': 0, 'docs': 0, 'chunks': 0}
 
         textSplitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n", " ", ""],
                                                       chunk_size=self.chunkSize,
@@ -56,8 +57,12 @@ class EmbeddingsStore():
             numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
             txtDocs += 1
-        self.docsStats['text'] = {'docs': txtDocs, 'pages': numPages, 'chunks': len(self.texts)}
-        logger.info(f"# Text Docs: {txtDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
+        numBytes = sum([len(text.page_content) for text in self.texts])
+        self.docsStats['text'] = {'docs': txtDocs, 'pages': numPages, 'chunks': len(self.texts), 'numBytes': numBytes}
+        logger.info(f"# Text Docs: {txtDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}, # Bytes: numBytes")
+        self.docsStats['totals']['bytes'] += self.docsStats['text']['numBytes']
+        self.docsStats['totals']['docs'] += self.docsStats['text']['docs']
+        self.docsStats['totals']['chunks'] += self.docsStats['text']['chunks']
 
         pdfDocs = 0
         numPages = 0
@@ -67,8 +72,13 @@ class EmbeddingsStore():
             numPages += len(pages)
             self.texts += textSplitter.split_documents(pages)
             pdfDocs += 1
-        self.docsStats['pdf'] = {'docs': pdfDocs, 'pages': numPages, 'chunks': len(self.texts)}
-        logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}")
+        numBytes = sum([len(text.page_content) for text in self.texts])
+        self.docsStats['pdf'] = {'docs': pdfDocs, 'pages': numPages, 'chunks': len(self.texts), 'numBytes': numBytes}
+        logger.info(f"Number of pdf Docs: {pdfDocs}; # Pages: {numPages}; # Texts: {len(self.texts)}, # Bytes: {numBytes}")
+        self.docsStats['totals']['bytes'] += self.docsStats['pdf']['numBytes']
+        self.docsStats['totals']['docs'] += self.docsStats['pdf']['docs']
+        self.docsStats['totals']['chunks'] += self.docsStats['pdf']['chunks']
+
         if not txtDocs and not pdfDocs:
             logger.error("No documents found")
             return None
@@ -133,6 +143,7 @@ class EmbeddingsStore():
         logger.info(scores)
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
         filteredChunks = [chunk for chunk, score in results if score <= threshold]
-        context = "\n".join([chunk.page_content for chunk in filteredChunks])
-        logger.info(f"Size of thresholded (<= {threshold}) context: {len(context)} Bytes")
-        return context
+        numBytes = sum([len(chunk.page_content) for chunk in filteredChunks])
+        logger.info(f"Size of thresholded (<= {threshold}) context: {numBytes} Bytes")
+        return filteredChunks
+#        context = "\n".join([chunk.page_content for chunk in filteredChunks])
