@@ -33,7 +33,7 @@ DEFAULTS = {
     "chunkOverlap": DEF_CHUNK_OVERLAP,
     "chunkSize": DEF_CHUNK_SIZE,
     "confFile": ".embedx.conf",
-    "docPath": None,
+    "docsPath": None,
     "model": DEF_MODEL,
     "logLevel": DEF_LOG_LEVEL,
     "logFile": None,
@@ -52,7 +52,7 @@ def getOpts():
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
 [-q <query>] [-t <threshold>] \
 [-E <saveEmbeddingsPath>] [-f] [-u <useEmbeddingsPath>] [-s <vectorStore>] [-S <similarity>] \
-[-d <docPath>] [-C <chunkSize>] [-O <chunkOverlap>]"
+[-d <docsPath>] [-C <chunkSize>] [-O <chunkOverlap>]"
 
     ap = argparse.ArgumentParser()
     generalGroup = ap.add_argument_group("General Options")
@@ -84,7 +84,7 @@ def getOpts():
         "-E", "--saveEmbeddingsPath", action="store", type=str,
         help="Path to where embeddings store is to be saved")
     vectorStoreGroup.add_argument(
-        "-f", "--forceSaveEmbeddings", action="store_true", type=bool,
+        "-f", "--forceSaveEmbeddings", action="store_true",
         help="Overwrite existing embeddings store")
     vectorStoreGroup.add_argument(
         "-u", "--useEmbeddingsPath", action="store", type=str,
@@ -100,7 +100,7 @@ def getOpts():
 
     embeddingsGroup = ap.add_argument_group("Embeddings Options")
     embeddingsGroup.add_argument(
-        "-d", "--docPath", action="store", type=str,
+        "-d", "--docsPath", action="store", type=str,
         help="Path to directory for (.txt and .pdf) context files")
     embeddingsGroup.add_argument(
         "-C", "--chunkSize", action="store", type=int,
@@ -150,15 +150,14 @@ def getOpts():
 
     # check for consistency among switches
     if conf['useEmbeddingsPath']:
-        for k in ('docPath', 'model', 'chunkOverlap', 'chunkSize'):
+        for k in ('docsPath', 'model', 'chunkOverlap', 'chunkSize'):
             if not conf.get(k):
                 logging.warning(f"Using saved embeddings, ignoring {k}")
 
     if conf['forceSaveEmbeddings'] and not conf['saveEmbeddingsPath']:
         logging.warning("No save path given, ignoring overwrite flag")
-
-    if conf['saveEmbeddingsPath'] and os.path.exists(conf['saveEmbeddingsPath']):
-        logging.error(f"Embeddings Store already exists: {conf['saveEmbeddingsPath']}")
+    if conf['saveEmbeddingsPath'] and os.path.exists(conf['saveEmbeddingsPath']) and not conf['forceSaveEmbeddings']:
+        logging.error(f"Embeddings Store already exists ({conf['saveEmbeddingsPath']})")
         exit(1)
     return conf
 
@@ -167,12 +166,15 @@ def run(options):
     embeddingsStore = EmbeddingsStore(options['model'], options['chunkSize'],
                                       options['chunkOverlap'])
     if options['useEmbeddingsPath']:
-        embeddingsStore.useStore(options['useEmbeddingsPath'])
+        metadata = embeddingsStore.useStore(options['useEmbeddingsPath'])
+        if not metadata:
+            logging.error(f"Failed to get saved Embeddings Store ({options['useEmbeddingsPath']})")
+            exit(1)
     else:
         # N.B. if saveEmbeddingsPath is None, then don't persist the vector store
-        if conf['forceSaveEmbeddings'] and conf['saveEmbeddingsPath']:
+        if options['forceSaveEmbeddings'] and options['saveEmbeddingsPath']:
             embeddingsStore.deleteStore()
-        embeddingsStore.createStore(options['docPath'], options['saveEmbeddingsPath'])
+        metadata = embeddingsStore.createStore(options['docsPath'], options['saveEmbeddingsPath'])
     embStoreSetupTime = time.time() - startTime
     logging.info(f"EmbeddingsStore setup time: {embStoreSetupTime:.4f} secs")
 
@@ -184,14 +186,11 @@ def run(options):
             if options['saveEmbeddingsPath']:
                 print(f"    Save Embeddings Store: {options['saveEmbeddingsPath']}")
             else:
-                print(f"    Not saving Embeddings Store")
-            print(f"    Docs Path:             {options['docPath']}")
-            print(f"    Doc Chunk Size:        {options['chunkSize']}")
-            print(f"    Chunk Overlap:         {options['chunkOverlap']}")
-        #### TMP TMP TMP
-        print(f"    ")
-        #### TMP TMP TMP
-        print(json.dumps(embeddingsStore.stats, indent=4, sort_keys=True))
+                print("    Not saving Embeddings Store")
+        print(f"    Docs Path:             {metadata['docsPath']}")
+        print(f"    Doc Chunk Size:        {metadata['chunkSize']}")
+        print(f"    Chunk Overlap:         {metadata['chunkOverlap']}")
+        print(f"   {json.dumps(metadata['docsStats'], indent=4, sort_keys=True).replace('\n', '\n    ')}")
 
     '''
     query = options['query']
