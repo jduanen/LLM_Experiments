@@ -24,8 +24,7 @@ import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 logger = logging.getLogger(__name__)
 
 
-#### TODO make vector store selectable
-
+#### FIXME make vector store selectable
 class EmbeddingsStore():
     def __init__(self, modelName, chunkSize, chunkOverlap):
         self.embeddings = HuggingFaceEmbeddings(model_name=modelName)
@@ -123,7 +122,8 @@ class EmbeddingsStore():
 
     #### FIXME allow for different types similarity functions -- e.g., dot and cosine
     def getContext(self, question, maxContext, threshold):
-        # retrieve relevant context from the knowledge base/vector store
+        #### TODO try using a retriever instead
+#        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
         results = self.vectorStore.similarity_search_with_score(question, k=(maxContext // self.chunkSize))
         logger.info(f"# Docs retrieved: {len(results)}")
         chunks = [chunk for chunk, score in results]
@@ -133,8 +133,6 @@ class EmbeddingsStore():
         logger.info(scores)
         #### N.B. ChromaDB uses cosine distance, so lower means more similar
         filteredChunks = [chunk for chunk, score in results if score <= threshold]
-        #### alternatively
-#        retriever = self.vectorStore.as_retriever(search_type='similarity_score_threshold', search_kwargs={'score_threshold': 0.21, 'k': 5}')
         context = "\n".join([chunk.page_content for chunk in filteredChunks])
         logger.info(f"Size of thresholded (<= {threshold}) context: {len(context)} Bytes")
         return context
