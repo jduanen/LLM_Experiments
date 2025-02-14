@@ -158,18 +158,24 @@ def getOpts():
         for k in ('docsPath', 'model', 'chunkOverlap', 'chunkSize'):
             if conf['cli'].get(k):
                 logging.warning(f"Using saved embeddings, ignoring {k}")
+    else:
+        if not conf['docsPath'] or not os.path.isdir(conf['docsPath']):
+            logging.error("Must provide path to documents")
+            exit(1)
 
-    if conf['forceSaveEmbeddings'] and not conf['saveEmbeddingsPath']:
-        logging.warning("No save path given, ignoring overwrite flag")
-    if conf['saveEmbeddingsPath'] and os.path.exists(conf['saveEmbeddingsPath']) and not conf['forceSaveEmbeddings']:
-        logging.error(f"Embeddings Store already exists ({conf['saveEmbeddingsPath']})")
-        exit(1)
+    if conf['saveEmbeddingsPath']:
+        if os.path.exists(conf['saveEmbeddingsPath']) and not conf['forceSaveEmbeddings']:
+            logging.error(f"Embeddings Store already exists ({conf['saveEmbeddingsPath']})")
+            exit(1)
+    else:
+        if conf['forceSaveEmbeddings']:
+            logging.warning("No save path given, ignoring overwrite flag")
     return conf
 
 def run(options):
     def _queryInfo(query, maxContext, threshold):
         print("Query Info:")
-        print(f"    Query: {query}")
+        print(f"    Query: '{query}'")
         print("TBD")
 
     def _contextInfo(context):
@@ -207,7 +213,8 @@ def run(options):
         print("Doc Stats:")
         print(f"   {json.dumps(metadata['docsStats'], indent=4, sort_keys=True).replace('\n', '\n    ')}")
         print("Timing:")
-        print(f"    EmbeddingsStore setup: {embStoreSetupTime:.4f} secs")
+        print(f"    EmbeddingsStore setup:  {embStoreSetupTime:.4f} secs")
+        print(f"    Embeddings rate:        {(metadata['docsStats']['totals']['chunks'] / embStoreSetupTime):.4f} chunks/sec")
 
     query = options['query']
     if query:
@@ -215,7 +222,8 @@ def run(options):
         context = embeddingsStore.getContext(query, options['maxContext'], options['threshold'])
         getContextTime = time.time() - startTime
         if options['verbose']:
-            print(f"    Get Context:           {getContextTime:.4f} secs")
+            print(f"    Get context:            {getContextTime:.4f} secs")
+            print(f"    Context retrieval rate: {(len(context) / getContextTime):.4f} chunks/sec")
             _queryInfo(query, options['maxContext'], options['threshold'])
         _contextInfo(context)
     else:
@@ -228,6 +236,7 @@ def run(options):
             getContextTime = time.time() - startTime
             if options['verbose']:
                 print(f"    Get Context:           {getContextTime:.4f} secs")
+                print(f"    Context retrieval rate: {(len(context) / getContextTime):.4f} chunks/sec")
                 _queryInfo(query, options['maxContext'], options['threshold'])
             _contextInfo(context)
     logging.debug("Exiting")
