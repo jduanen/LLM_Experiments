@@ -11,7 +11,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 import time
 import yaml
@@ -20,12 +19,14 @@ import pdb  ## pdb.set_trace()  #### TMP TMP TMP
 
 from rag.EmbeddingsStore import EmbeddingsStore
 
+
 DEF_LOG_LEVEL = "WARNING"
 
-DEF_CHUNK_SIZE = 1000
-DEF_CHUNK_OVERLAP = 500
+DEF_CHUNK_SIZE = 1000    # FIXME random choice -- come up with better value
+DEF_CHUNK_OVERLAP = 500  # FIXME random choice -- come up with better value
 
-DEF_THRESHOLD = 1.15  # N.B. Assumes ChromaDB uses Cosine similarity
+DEF_MAX_CONTEXT = 16000  # FIXME random choice -- come up with better value
+DEF_THRESHOLD = 1.15     # N.B. Assumes ChromaDB uses Cosine similarity
 
 DEF_MODEL = "all-mpnet-base-v2"
 
@@ -34,12 +35,13 @@ DEFAULTS = {
     "chunkSize": DEF_CHUNK_SIZE,
     "confFile": ".embedx.conf",
     "docsPath": None,
-    "model": DEF_MODEL,
+    "forceSaveEmbeddings": False,
     "logLevel": DEF_LOG_LEVEL,
     "logFile": None,
+    "maxContext": DEF_MAX_CONTEXT,
+    "model": DEF_MODEL,
     "query": None,
     "saveEmbeddingsPath": None,
-    "forceSaveEmbeddings": False,
     "similarity": "Cosine",
     "threshold": DEF_THRESHOLD,
     "useEmbeddingsPath": None,
@@ -50,7 +52,7 @@ DEFAULTS = {
 
 def getOpts():
     usage = f"Usage: {sys.argv[0]} [-v] [-c <confFile>] [-L <logLevel>] [-l <logFile>] [-m <model>] \
-[-q <query>] [-t <threshold>] \
+[-q <query>] [-x <maxContext>] [-t <threshold>] \
 [-E <saveEmbeddingsPath>] [-f] [-u <useEmbeddingsPath>] [-s <vectorStore>] [-S <similarity>] \
 [-d <docsPath>] [-C <chunkSize>] [-O <chunkOverlap>]"
 
@@ -75,6 +77,9 @@ def getOpts():
     queryGroup.add_argument(
         "-q", "--query", action="store", type=str,
         help="Question to ask of the model")
+    queryGroup.add_argument(
+        "-x", "--maxContext", action="store", type=int,
+        help="Maximum number of bytes in the retrieved context")
     queryGroup.add_argument(
         "-t", "--threshold", action="store", type=float,
         help="Threshold above/below (depending on the similarity metric being used) which retrievals are considered valid")
@@ -151,7 +156,7 @@ def getOpts():
     # check for consistency among switches
     if conf['useEmbeddingsPath']:
         for k in ('docsPath', 'model', 'chunkOverlap', 'chunkSize'):
-            if not conf.get(k):
+            if conf['cli'].get(k):
                 logging.warning(f"Using saved embeddings, ignoring {k}")
 
     if conf['forceSaveEmbeddings'] and not conf['saveEmbeddingsPath']:
@@ -162,6 +167,15 @@ def getOpts():
     return conf
 
 def run(options):
+    def _queryInfo(query, maxContext, threshold):
+        print("Query Info:")
+        print(f"    Query: {query}")
+        print("TBD")
+
+    def _contextInfo(context):
+        print("Context Info:")
+        print("TBD")
+
     startTime = time.time()
     embeddingsStore = EmbeddingsStore(options['model'], options['chunkSize'],
                                       options['chunkOverlap'])
@@ -190,23 +204,32 @@ def run(options):
         print(f"    Docs Path:             {metadata['docsPath']}")
         print(f"    Doc Chunk Size:        {metadata['chunkSize']}")
         print(f"    Chunk Overlap:         {metadata['chunkOverlap']}")
+        print("Doc Stats:")
         print(f"   {json.dumps(metadata['docsStats'], indent=4, sort_keys=True).replace('\n', '\n    ')}")
+        print("Timing:")
+        print(f"    EmbeddingsStore setup: {embStoreSetupTime:.4f} secs")
 
-    '''
     query = options['query']
     if query:
-        response, metadata = rag.answerQuestion(query)
-        metadata['embStoreSetupTime'] = embStoreSetupTime
-        handleResponse()
+        startTime = time.time()
+        context = embeddingsStore.getContext(query, options['maxContext'], options['threshold'])
+        getContextTime = time.time() - startTime
+        if options['verbose']:
+            print(f"    Get Context:           {getContextTime:.4f} secs")
+            _queryInfo(query, options['maxContext'], options['threshold'])
+        _contextInfo(context)
     else:
         while True:
             query = input("Question: ")
             if not query:
                 break
-            response, metadata = rag.answerQuestion(query)
-            metadata['embStoreSetupTime'] = embStoreSetupTime
-            handleResponse()
-    '''
+            startTime = time.time()
+            context = embeddingsStore.getContext(query, options['maxContext'], options['threshold'])
+            getContextTime = time.time() - startTime
+            if options['verbose']:
+                print(f"    Get Context:           {getContextTime:.4f} secs")
+                _queryInfo(query, options['maxContext'], options['threshold'])
+            _contextInfo(context)
     logging.debug("Exiting")
 
 
